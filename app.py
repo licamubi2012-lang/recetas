@@ -4,6 +4,20 @@ import os
 
 app = Flask(__name__)
 
+MAPEO_INGREDIENTES = {
+    'pollo_asado': ['pollo_deshebrado', 'pollo_asado'],
+    'pollo_rostizado': ['pollo_deshebrado', 'pollo_rostizado'],
+    'pollo_deshebrado': ['pollo_deshebrado'],
+    'tortillas_de_maiz': ['tortillas_de_harina', 'tortillas_de_maiz'],
+    'tortillas_de_harina': ['tortillas_de_harina'],
+    'queso_panela': ['quesillo_deshebrado', 'queso_panela'],
+    'queso_gouda': ['quesillo_deshebrado', 'queso_gouda'],
+    'queso_asadero': ['quesillo_deshebrado', 'queso_asadero'],
+    'quesillo_deshebrado': ['quesillo_deshebrado'],
+    'caja_de_caldillo_de_tomate': ['dos_jitomates', 'caja_de_caldillo_de_tomate'],
+    'dos_jitomates': ['dos_jitomates']
+}
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -11,38 +25,44 @@ def home():
 @app.route('/consultar', methods=['POST'])
 def consultar_recetas():
     datos = request.json
-    ingreso_usuario = datos.get('ingrediente', 'tortillas_de_harina')
+    ingredientes_usuario = datos.get('ingredientes', [])
     
-    # Ruta de tu archivo recetas.pl (asegúrate de que esté en la misma carpeta)
     ruta_prolog = os.path.join(os.getcwd(), 'recetas.pl')
-    
-    # Consulta que le mandaremos a Prolog (ejemplo: nuestra Regla 2)
-    # Le preguntamos qué receta usa el ingrediente que ingresó el usuario
-    consulta = f"recomendar_receta(Receta, {ingreso_usuario})."
+    recetas_encontradas = set()
     
     try:
-        # Comando para ejecutar SWI-Prolog desde la consola de forma silenciosa
-        # (Asegúrate de que 'swipl' esté reconocido en el sistema)
-        comando = ['swipl', '-s', ruta_prolog, '-g', f"{consulta}, writeln(Receta), fail;", '-t', 'halt']
-        
-        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=5)
-        
-        # Capturamos la salida que genera Prolog
-        salida_prolog = resultado.stdout.strip()
-        
-        # Procesamos las respuestas obtenidas
-        recetas_encontradas = [r.strip() for r in salida_prolog.split('\n') if r.strip()]
+        ingredientes_a_consultar = set()
+        for ing in ingredientes_usuario:
+            if ing in MAPEO_INGREDIENTES:
+                ingredientes_a_consultar.update(MAPEO_INGREDIENTES[ing])
+            else:
+                ingredientes_a_consultar.add(ing)
+
+        for ing in ingredientes_a_consultar:
+            # Quitamos el punto interno para que la sintaxis de SWI-Prolog sea correcta
+            consulta = f"recomendar_receta(Receta, {ing})"
+            
+            comando = ['swipl', '-s', ruta_prolog, '-g', f"{consulta}, writeln(Receta), fail", '-t', 'halt']
+            
+            resultado = subprocess.run(comando, capture_output=True, text=True, timeout=5)
+            
+            salida = resultado.stdout.strip()
+            if salida:
+                for r in salida.split('\n'):
+                    if r.strip():
+                        recetas_encontradas.add(r.strip())
         
         return jsonify({
             "exito": True, 
             "motor": "SWI-Prolog Real",
-            "recomendaciones": recetas_encontradas
+            "recomendaciones": list(recetas_encontradas)
         })
         
     except Exception as e:
         return jsonify({
             "exito": False, 
-            "error": str(e)
+            "error": str(e),
+            "recomendaciones": []
         })
 
 if __name__ == '__main__':
